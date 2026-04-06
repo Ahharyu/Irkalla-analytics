@@ -24,6 +24,7 @@ def load_data():
     if not df.empty:
         for col in ['profit', 'commission', 'swap', 'magic']:
             df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+        # La columna que manda
         df['net_profit'] = df['profit'] + df['commission'] + df['swap']
         df['closetime'] = pd.to_datetime(df['closetime'])
         return df.sort_values('closetime')
@@ -31,7 +32,7 @@ def load_data():
 
 df = load_data()
 
-# --- 3. NAVEGACIÓN ---
+# --- 3. INTERFAZ ---
 with st.sidebar:
     st.image(LOGO_URL, width=140)
     st.markdown("<h3 style='text-align:center;'>AHHARYU LABS</h3>", unsafe_allow_html=True)
@@ -39,20 +40,20 @@ with st.sidebar:
     menu = st.radio("SECCIONES", ["🏠 DASHBOARD", "🤖 BOTS", "📜 HISTORIAL"])
 
 if df.empty:
-    st.error("No hay datos.")
+    st.error("Sin datos.")
 else:
-    # --- 4. LÓGICA DE CÁLCULO SIN RESTAS ---
+    # --- 4. MATEMÁTICAS PURAS (LO QUE FUNCIONA) ---
     
-    # Capital Inicial: Buscamos el registro de 100k (magic 0)
+    # Depósito: El primer registro de magic 0 (100.000€)
     df_depo = df[df['magic'] == 0].sort_values('closetime')
     val_deposito = df_depo['net_profit'].iloc[0] if not df_depo.empty else 100000.0
     
-    # Beneficio Bots: SUMA DIRECTA de todo lo que sea magic > 0
+    # Balance Total: Suma de TODO
+    balance_total = df['net_profit'].sum()
+    
+    # Beneficio Bots: SUMA DIRECTA de magic > 0 (Sin restas raras)
     df_solo_bots = df[df['magic'] > 0].copy()
     profit_total_bots = df_solo_bots['net_profit'].sum()
-    
-    # Balance Total: Suma de todo
-    balance_total = df['net_profit'].sum()
 
     if menu == "🏠 DASHBOARD":
         st.title("⚡ Centro de Mando")
@@ -70,36 +71,33 @@ else:
     elif menu == "🤖 BOTS":
         st.title("Rendimiento por Unidad")
         if df_solo_bots.empty:
-            st.info("Sin datos de bots.")
+            st.info("No hay datos de bots.")
         else:
             bot_ids = sorted(df_solo_bots['magic'].unique())
-            opcion = st.selectbox("Seleccionar Bot:", ["📊 VISTA GLOBAL"] + [f"BOT {int(m)}" for m in bot_ids])
+            opcion = st.selectbox("Seleccionar:", ["📊 VISTA GLOBAL"] + [f"BOT {int(m)}" for m in bot_ids])
             
             fig_bots = go.Figure()
             if opcion == "📊 VISTA GLOBAL":
                 for m in bot_ids:
                     b_df = df_solo_bots[df_solo_bots['magic'] == m].copy()
+                    # Acumulamos el profit del bot
                     b_df['cum'] = b_df['net_profit'].cumsum()
-                    # EL TRUCO PARA QUE NO SALGAN DEL MEDIO:
-                    # Restamos el primer valor para que la gráfica empiece en 0
-                    primer_valor = b_df['cum'].iloc[0]
-                    b_df['cum_zero'] = b_df['cum'] - primer_valor
+                    # Alineamos a CERO: restamos el primer trade para que todos nazcan en la base
+                    b_df['cum_zero'] = b_df['cum'] - b_df['net_profit'].iloc[0]
                     fig_bots.add_trace(go.Scatter(x=b_df['closetime'], y=b_df['cum_zero'], name=f"BOT {int(m)}", mode='lines'))
             else:
                 m_id = int(opcion.replace("BOT ", ""))
                 b_df = df_solo_bots[df_solo_bots['magic'] == m_id].copy()
                 b_df['cum'] = b_df['net_profit'].cumsum()
-                # Alineación a cero para el bot individual
-                primer_v = b_df['cum'].iloc[0]
-                b_df['cum_zero'] = b_df['cum'] - primer_v
+                b_df['cum_zero'] = b_df['cum'] - b_df['net_profit'].iloc[0]
                 
-                st.metric("Profit de este bot", f"{b_df['net_profit'].sum():,.2f} €")
+                st.metric("Profit Bot", f"{b_df['net_profit'].sum():,.2f} €")
                 fig_bots.add_trace(go.Scatter(x=b_df['closetime'], y=b_df['cum_zero'], name=opcion, mode='lines', line=dict(color='#00FFC8')))
 
             fig_bots.update_layout(template="plotly_dark", height=500, paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
             st.plotly_chart(fig_bots, use_container_width=True)
 
     elif menu == "📜 HISTORIAL":
-        st.title("Historial")
+        st.title("Registro")
         df['tag'] = df['magic'].apply(lambda x: "SISTEMA" if x == 0 else f"BOT {int(x)}")
         st.dataframe(df[['closetime', 'tag', 'symbol', 'net_profit']].sort_values('closetime', ascending=False), use_container_width=True)
