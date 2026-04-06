@@ -36,7 +36,7 @@ st.markdown("""
 # --- 2. CREDENCIALES ---
 SUPABASE_URL = "https://gnescqvodvrwsyhvymkw.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImduZXNjcXZvZHZyd3N5aHZ5bWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTQ2NTEsImV4cCI6MjA5MDk5MDY1MX0.I1R8YwJHvXE24T09fsp15sWTZohq7iAGDI6FpxLNTqI"
-LOGO_URL = "https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo%20empresa.png"
+LOGO_URL = "https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo.png"
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
