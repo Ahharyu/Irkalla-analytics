@@ -64,7 +64,7 @@ df_all, df_trades = load_clean_data()
 # --- 3. MENÚ LATERAL (SIDEBAR) ---
 with st.sidebar:
     # Logo Centrado
-    st.markdown(f'<div class="sidebar-logo"><img src="https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo.png"></div>', unsafe_allow_html=True)
+    st.markdown(f'<div class="sidebar-logo"><img src="https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo empresa.png"></div>', unsafe_allow_html=True)
     st.markdown("<h2 style='text-align: center; color: #E1B12C; margin-top:-10px;'>AHHARYU</h2>", unsafe_allow_html=True)
     st.markdown("---")
     
