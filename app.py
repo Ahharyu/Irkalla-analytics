@@ -2,18 +2,16 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 import plotly.express as px
-import plotly.graph_objects as go
 
 # --- 1. CONFIGURACIÓN E IDENTIDAD ---
 st.set_page_config(page_title="Ahharyu Alchemic Labs", layout="wide", page_icon="🧪")
 
-# DICCIONARIO DE NOMBRES (Añade aquí tus Magic Numbers reales)
+# DICCIONARIO DE NOMBRES
 nombres_bots = {
     0: "Sistema/Balance",
-    # Ejemplo: 12345: "Scalper Pro",
 }
 
-# CSS ESTABLE PARA INTERFAZ OSCURA (Mantenemos tu diseño original)
+# CSS ESTABLE
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
@@ -22,7 +20,7 @@ st.markdown("""
     .firm-name { text-align: center; color: #E1B12C; font-family: 'Courier New', Courier, monospace; letter-spacing: 4px; margin-top: 10px; font-weight: bold; }
     .firm-sub { text-align: center; color: #5D6D7E; font-size: 10px; letter-spacing: 1px; margin-bottom: 20px; }
 
-    /* MENU LATERAL: CAJAS INTERACTIVAS */
+    /* MENU LATERAL */
     div[data-testid="stSidebar"] div.stRadio div[role="radiogroup"] label {
         background-color: #1A1E26 !important;
         border: 1px solid #333 !important;
@@ -57,12 +55,17 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CREDENCIALES ---
+# --- 2. CREDENCIALES (RE-VERIFICADAS) ---
 SUPABASE_URL = "https://gnescqvodvrwsyhvymkw.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImduZXNjcXZvZHZyd3N5aHZ5bWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTQ2NTEsImV4cCI6MjA5MDk9MDY1MX0.I1R8YwJHvXE24T09fsp15sWTZohq7iAGDI6FpxLNTqI"
+# Asegúrate de que esta llave se pegue completa sin saltos de línea extraños
+SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImduZXNjcXZvZHZyd3N5aHZ5bWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTQ2NTEsImV4cCI6MjA5MDk5MDY1MX0.I1R8YwJHvXE24T09fsp15sWTZohq7iAGDI6FpxLNTqI"
 LOGO_URL = "https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo.png"
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Inicialización segura
+try:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+except Exception as e:
+    st.error(f"Error crítico de conexión: {e}")
 
 @st.cache_data(ttl=10)
 def load_data():
@@ -70,58 +73,31 @@ def load_data():
         res = supabase.table("trades").select("*").execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
-            # Conversión numérica de precisión
+            # Limpieza numérica
             for col in ['profit', 'commission', 'swap', 'magic']:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
             df['closetime'] = pd.to_datetime(df['closetime'])
             df = df.sort_values('closetime')
             
-            # Resultado NETO por operación (Profit + Comm + Swap)
+            # Resultado Neto Real
             df['net_profit'] = df['profit'] + df['commission'] + df['swap']
-            
-            # Mapeo de nombres
             df['bot_name'] = df['magic'].map(nombres_bots).fillna("Bot: " + df['magic'].astype(str))
             
-            # --- CÁLCULO DE EQUITY CURVES POR BOT (Precisión Institucional) ---
-            # 1. Obtenemos todos los timestamps únicos y Magic Numbers
-            all_times = df['closetime'].unique()
-            all_times.sort()
-            all_magics = df['bot_name'].unique()
+            # --- LÓGICA DE CURVAS PARA EL GRÁFICO SERIO ---
+            # Calculamos la equity acumulada por cada bot individualmente
+            df['equity_individual'] = df.groupby('bot_name')['net_profit'].cumsum()
             
-            # 2. Creamos un DataFrame maestro con todas las combinaciones tiempo/bot
-            index = pd.MultiIndex.from_product([all_times, all_magics], names=['closetime', 'bot_name'])
-            equity_df = pd.DataFrame(index=index).reset_index()
+            # Para la línea TOTAL, necesitamos la suma de todos en cada punto del tiempo
+            df['total_account_equity'] = df['net_profit'].cumsum()
             
-            # 3. Mapeamos el net_profit real a este DataFrame maestro
-            trades_grouped = df.groupby(['closetime', 'bot_name'])['net_profit'].sum().reset_index()
-            equity_df = pd.merge(equity_df, trades_grouped, on=['closetime', 'bot_name'], how='left').fillna(0.0)
-            
-            # 4. Calculamos la suma acumulada por cada Bot de forma independiente
-            equity_df['equity_bot'] = equity_df.groupby('bot_name')['net_profit'].cumsum()
-            
-            # 5. Calculamos la Equity Total (suma de todas las equities de los bots en cada momento)
-            total_equity_curve = equity_df.groupby('closetime')['equity_bot'].sum().reset_index()
-            total_equity_curve['bot_name'] = "EQUIDAD TOTAL DE LA CUENTA" # Nombre especial para identificarla
-            total_equity_curve.rename(columns={'equity_bot': 'equity_value'}, inplace=True)
-            
-            # 6. Preparamos el DataFrame final para el gráfico multi-línea
-            # Primero las curvas individuales de los bots
-            bots_curves = equity_df[['closetime', 'bot_name', 'equity_bot']].rename(columns={'equity_bot': 'equity_value'})
-            
-            # Luego concatenamos la curva total
-            final_curves_df = pd.concat([bots_curves, total_equity_curve], ignore_index=True)
-            
-            # Filtramos trades reales para estadísticas
             df_trades = df[df['type'].isin(['BUY', 'SELL'])].copy()
-            
-            # Necesitamos df_all original para las métricas
-            return df, df_trades, final_curves_df
+            return df, df_trades
     except Exception as e:
-        st.error(f"Error de datos: {e}")
-    return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
+        st.error(f"Error consultando Supabase: {e}")
+    return pd.DataFrame(), pd.DataFrame()
 
-df_all, df_trades, df_curves = load_data()
+df_all, df_trades = load_data()
 
 # --- 3. BARRA LATERAL ---
 with st.sidebar:
@@ -133,17 +109,17 @@ with st.sidebar:
     menu = st.radio("SISTEMA", ["🏠 DASHBOARD", "🤖 FLOTA DE BOTS", "📜 EL GRIMORIO"], label_visibility="collapsed")
     
     st.markdown("---")
-    st.success("SISTEMA ONLINE")
+    st.success("CONEXIÓN ACTIVA")
 
 # --- 4. SECCIONES ---
 if df_all.empty:
-    st.info("Sincronizando el laboratorio...")
+    st.info("Sincronizando el laboratorio con el servidor central...")
 else:
     if menu == "🏠 DASHBOARD":
         st.title("⚡ Centro de Mando")
         c1, c2, c3, c4 = st.columns(4)
-        balance_actual = df_all['net_profit'].sum() # Mantenemos el balance real exacto
-        c1.metric("Balance Neto Actual", f"{balance_actual:,.2f} €")
+        balance_actual = df_all['net_profit'].sum()
+        c1.metric("Balance Real", f"{balance_actual:,.2f} €")
         
         win_rate = (len(df_trades[df_trades['net_profit'] > 0]) / len(df_trades) * 100) if not df_trades.empty else 0
         c2.metric("Win Rate", f"{win_rate:.1f}%")
@@ -156,65 +132,29 @@ else:
 
         st.divider()
         
-        # --- NUEVO GRÁFICO INSTITUCIONAL MULTI-LÍNEA ---
-        st.subheader("📈 Evolución Comparativa de la Flota (Equidad Real)")
+        # --- GRÁFICO INSTITUCIONAL MEJORADO ---
+        st.subheader("📈 Rendimiento Histórico por Activo / Bot")
         
-        if not df_curves.empty:
-            # Usamos Plotly Express para crear el gráfico base
-            fig_equity = px.line(df_curves, 
-                                 x='closetime', 
-                                 y='equity_value', 
-                                 color='bot_name', # Una línea por Bot
-                                 title="Equity Curves por Bot vs Total de Cuenta",
-                                 color_discrete_sequence=px.colors.qualitative.Antique) # Paleta más sobria
-            
-            # Estilo avanzado para que sea "serio" y profesional
-            fig_equity.update_layout(
-                template="plotly_dark", 
-                paper_bgcolor='rgba(0,0,0,0)', 
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(
-                    title="Tiempo",
-                    showgrid=False,
-                    linecolor="#444",
-                    mirror=True
-                ),
-                yaxis=dict(
-                    title="Valor de Equidad (€)",
-                    showgrid=True,
-                    gridcolor="#222", # Rejilla sutil
-                    linecolor="#444",
-                    mirror=True
-                ),
-                legend=dict(
-                    title="Bots y Cuenta",
-                    orientation="h", # Leyenda horizontal abajo para maximizar gráfico
-                    yanchor="bottom",
-                    y=-0.3, # Posición de la leyenda
-                    xanchor="center",
-                    x=0.5,
-                    bgcolor="rgba(0,0,0,0.5)", # Fondo leyenda sutil
-                    font=dict(size=10, color="# BEC3C9")
-                ),
-                margin=dict(l=20, r=20, t=50, b=100), # Ajuste márgenes
-                hovermode="x unified" # Muestra todos los valores al pasar el ratón por el eje X
-            )
-            
-            # Resaltar la línea del Total (la más importante)
-            fig_equity.update_traces(
-                selector=dict(name="EQUIDAD TOTAL DE LA CUENTA"), 
-                line=dict(color="#E1B12C", width=4) # Oro de Ahharyu, más gruesa
-            )
-            
-            # Líneas más finas para los bots para no saturar
-            fig_equity.update_traces(
-                line=dict(width=1.5),
-                selector=lambda t: t.name != "EQUIDAD TOTAL DE LA CUENTA"
-            )
+        # Preparamos los datos para que Plotly pinte líneas separadas
+        # Primero la Equidad Total (Diferenciada)
+        fig = px.line(df_all, x='closetime', y='total_account_equity', 
+                      title='Equidad Total de la Cuenta',
+                      color_discrete_sequence=['#E1B12C']) # Color Oro
+        
+        # Añadimos las líneas de los bots individuales para comparar
+        for bot in df_all['bot_name'].unique():
+            bot_data = df_all[df_all['bot_name'] == bot]
+            fig.add_scatter(x=bot_data['closetime'], y=bot_data['equity_individual'], 
+                            mode='lines', name=bot, line=dict(width=1.5, dash='dot'))
 
-            st.plotly_chart(fig_equity, use_container_width=True)
-        else:
-            st.warning("No hay datos suficientes para generar las curvas comparativas.")
+        fig.update_layout(
+            template="plotly_dark", 
+            paper_bgcolor='rgba(0,0,0,0)', 
+            plot_bgcolor='rgba(0,0,0,0)',
+            hovermode="x unified",
+            legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
     elif menu == "🤖 FLOTA DE BOTS":
         st.title("🧬 Análisis de la Flota")
