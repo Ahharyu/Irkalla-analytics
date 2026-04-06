@@ -1,57 +1,37 @@
 import streamlit as st
 import pandas as pd
 from supabase import create_client
-import plotly.express as px
+import plotly.graph_objects as go
 
 # --- 1. CONFIGURACIÓN E IDENTIDAD ---
 st.set_page_config(page_title="Ahharyu Alchemic Labs", layout="wide", page_icon="🧪")
 
-# DICCIONARIO DE NOMBRES
-nombres_bots = {
-    0: "Sistema/Balance",
-}
-
-# CSS ESTABLE
+# CSS PARA PANEL DE ESTADÍSTICAS (Lado Izquierdo estilo Myfxbook)
 st.markdown("""
     <style>
     .main { background-color: #0E1117; }
     .sidebar-logo { display: flex; justify-content: center; margin-bottom: 10px; }
     .sidebar-logo img { width: 140px; border-radius: 10px; border: 1px solid #E1B12C; }
-    .firm-name { text-align: center; color: #E1B12C; font-family: 'Courier New', Courier, monospace; letter-spacing: 4px; margin-top: 10px; font-weight: bold; }
-    .firm-sub { text-align: center; color: #5D6D7E; font-size: 10px; letter-spacing: 1px; margin-bottom: 20px; }
-
-    /* MENU LATERAL */
-    div[data-testid="stSidebar"] div.stRadio div[role="radiogroup"] label {
-        background-color: #1A1E26 !important;
-        border: 1px solid #333 !important;
-        border-radius: 8px !important;
-        padding: 10px 15px !important;
-        width: 100% !important;
-        transition: 0.3s;
-        margin-bottom: 5px;
-    }
-    div[data-testid="stSidebar"] div.stRadio div[role="radiogroup"] label:hover {
-        border-color: #E1B12C !important;
-        background-color: #252A34 !important;
-    }
-    div[data-testid="stSidebar"] div.stRadio div[role="radiogroup"] label [data-testid="stMarkdownContainer"] p {
-        color: #BEC3C9 !important;
-        font-weight: bold !important;
-    }
-
-    /* METRICAS */
-    div[data-testid="stMetric"] {
+    
+    /* Panel de Info estilo Myfxbook */
+    .info-panel {
         background-color: #161A22;
-        padding: 20px;
-        border-radius: 12px;
-        border-bottom: 4px solid #E1B12C;
+        padding: 15px;
+        border-radius: 5px;
+        border: 1px solid #262730;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     }
-
-    /* TARJETAS DE BOTS */
-    .bot-card { background:#1E232D; padding:15px; border-radius:10px; margin-bottom:10px; border-left:6px solid; }
-    .pos-val { color: #00FFC8; font-weight: bold; }
-    .neg-val { color: #FF4B4B; font-weight: bold; }
-    .column-title { text-align: center; font-weight: bold; color: #E1B12C; text-transform: uppercase; margin-bottom: 20px; }
+    .info-row {
+        display: flex;
+        justify-content: space-between;
+        padding: 5px 0;
+        border-bottom: 1px solid #262730;
+        font-size: 13px;
+    }
+    .info-label { color: #888; }
+    .info-value { color: #EEE; font-weight: bold; }
+    .value-pos { color: #00FFC8; }
+    .value-neg { color: #FF4B4B; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -70,116 +50,114 @@ def load_data():
         if not df.empty:
             for col in ['profit', 'commission', 'swap', 'magic']:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-            
             df['closetime'] = pd.to_datetime(df['closetime'])
             df = df.sort_values('closetime')
-            
-            # Resultado Neto Real
             df['net_profit'] = df['profit'] + df['commission'] + df['swap']
-            df['bot_name'] = df['magic'].map(nombres_bots).fillna("Bot: " + df['magic'].astype(str))
             
-            # Calculamos la ganancia ACUMULADA de cada bot (empezando desde 0€)
-            df['profit_acumulado'] = df.groupby('bot_name')['net_profit'].cumsum()
+            # Depósito inicial (Ajusta si es distinto a 100k)
+            initial_deposit = 100000.0
             
-            # Solo trades reales para estadísticas
+            # Cálculo de crecimiento acumulado en %
+            df['profit_cum'] = df['net_profit'].cumsum()
+            df['growth_pct'] = (df['profit_cum'] / initial_deposit) * 100
+            
+            # Crecimiento por bot
+            df['bot_name'] = df['magic'].apply(lambda x: "Sistema" if x==0 else f"Bot: {int(x)}")
+            df['bot_profit_cum'] = df.groupby('bot_name')['net_profit'].cumsum()
+            df['bot_growth_pct'] = (df['bot_profit_cum'] / initial_deposit) * 100
+            
             df_trades = df[df['type'].isin(['BUY', 'SELL'])].copy()
-            
-            return df, df_trades
-    except Exception as e:
-        st.error(f"Error consultando Supabase: {e}")
-    return pd.DataFrame(), pd.DataFrame()
+            return df, df_trades, initial_deposit
+    except: pass
+    return pd.DataFrame(), pd.DataFrame(), 100000.0
 
-df_all, df_trades = load_data()
+df_all, df_trades, deposit = load_data()
 
 # --- 3. BARRA LATERAL ---
 with st.sidebar:
     st.markdown(f'<div class="sidebar-logo"><img src="{LOGO_URL}"></div>', unsafe_allow_html=True)
-    st.markdown('<div class="firm-name">AHHARYU</div>', unsafe_allow_html=True)
-    st.markdown('<div class="firm-sub">ALCHEMIC TRADING LABS</div>', unsafe_allow_html=True)
+    st.markdown("<h3 style='text-align:center; color:#E1B12C;'>AHHARYU</h3>", unsafe_allow_html=True)
+    menu = st.radio("SISTEMA", ["📈 CRECIMIENTO", "🤖 FLOTA", "📜 HISTORIAL"], label_visibility="collapsed")
     st.markdown("---")
-    
-    menu = st.radio("SISTEMA", ["🏠 DASHBOARD", "🤖 FLOTA DE BOTS", "📜 EL GRIMORIO"], label_visibility="collapsed")
-    
-    st.markdown("---")
-    st.success("CONEXIÓN ACTIVA")
+    st.caption("Sincronizado: Online")
 
 # --- 4. SECCIONES ---
 if df_all.empty:
-    st.info("Sincronizando el laboratorio...")
+    st.info("Esperando telemetría...")
 else:
-    if menu == "🏠 DASHBOARD":
-        st.title("⚡ Centro de Mando")
-        c1, c2, c3, c4 = st.columns(4)
+    if menu == "📈 CRECIMIENTO":
+        st.title("Performance Analytics")
         
-        # El balance neto total se muestra aquí arriba, siempre visible
-        balance_actual = df_all['net_profit'].sum()
-        c1.metric("Balance Real Cuenta", f"{balance_actual:,.2f} €")
+        # Layout: Panel de Info Izquierda + Gráfico Derecha
+        col_info, col_graph = st.columns([1, 4])
         
-        win_rate = (len(df_trades[df_trades['net_profit'] > 0]) / len(df_trades) * 100) if not df_trades.empty else 0
-        c2.metric("Win Rate", f"{win_rate:.1f}%")
-        
-        pos_sum = df_trades[df_trades['net_profit'] > 0]['net_profit'].sum()
-        neg_sum = abs(df_trades[df_trades['net_profit'] < 0]['net_profit'].sum())
-        pf = pos_sum/neg_sum if neg_sum != 0 else 0
-        c3.metric("Profit Factor", f"{pf:.2f}")
-        c4.metric("Operaciones", len(df_trades))
+        with col_info:
+            st.markdown('<p style="color:#E1B12C; font-weight:bold;">INFO</p>', unsafe_allow_html=True)
+            gain = (df_all['net_profit'].sum() / deposit) * 100
+            beneficio = df_all['net_profit'].sum()
+            
+            st.markdown(f"""
+                <div class="info-panel">
+                    <div class="info-row"><span class="info-label">Ganancia:</span><span class="info-value value-pos">+{gain:.2f}%</span></div>
+                    <div class="info-row"><span class="info-label">Abs. Ganancia:</span><span class="info-value value-pos">+{gain:.2f}%</span></div>
+                    <div class="info-row"><span class="info-label">Saldo:</span><span class="info-value">${deposit+beneficio:,.2f}</span></div>
+                    <div class="info-row"><span class="info-label">Beneficio:</span><span class="info-value value-pos">${beneficio:,.2f}</span></div>
+                    <div class="info-row"><span class="info-label">Depósitos:</span><span class="info-value">${deposit:,.0f}</span></div>
+                </div>
+            """, unsafe_allow_html=True)
 
-        st.divider()
-        
-        # --- GRÁFICO DE RENDIMIENTO PUERTO (SIN BALANCE TOTAL) ---
-        st.subheader("📈 Curvas de Rendimiento Neto (Profit Acumulado)")
-        st.markdown("<small style='color: #888;'>Este gráfico muestra cuánto dinero ha generado cada bot individualmente, ignorando el capital inicial de la cuenta.</small>", unsafe_allow_html=True)
-        
-        # Filtramos para que NO aparezca el registro de 'Sistema/Balance' en el gráfico
-        # así el eje Y se ajusta solo a los beneficios reales de los bots
-        df_solo_bots = df_all[df_all['magic'] != 0].copy()
+        with col_graph:
+            # CREACIÓN DEL GRÁFICO PROFESIONAL (Plotly Graph Objects)
+            fig = go.Figure()
 
-        if not df_solo_bots.empty:
-            fig = px.line(
-                df_solo_bots, 
-                x='closetime', 
-                y='profit_acumulado', 
-                color='bot_name',
-                color_discrete_sequence=px.colors.qualitative.Vivid
-            )
+            # Línea Principal de Crecimiento (Roja como en tu imagen)
+            fig.add_trace(go.Scatter(
+                x=df_all['closetime'], y=df_all['growth_pct'],
+                mode='lines', name='Crecimiento',
+                line=dict(color='#FF4B4B', width=3),
+                fill='tozeroy', fillcolor='rgba(255, 75, 75, 0.05)'
+            ))
+
+            # Añadir líneas finas para los bots (opcional, se pueden apagar en la leyenda)
+            for bot in df_all['bot_name'].unique():
+                if bot != "Sistema":
+                    bot_df = df_all[df_all['bot_name'] == bot]
+                    fig.add_trace(go.Scatter(
+                        x=bot_df['closetime'], y=bot_df['bot_growth_pct'],
+                        mode='lines', name=bot,
+                        line=dict(width=1, dash='dot'),
+                        visible='legendonly' # Apagados por defecto para no ensuciar
+                    ))
 
             fig.update_layout(
-                template="plotly_dark", 
-                paper_bgcolor='rgba(0,0,0,0)', 
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis_title="Cronología de Operaciones",
-                yaxis_title="Beneficio Neto Acumulado (€)",
+                template="plotly_dark",
                 hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
+                margin=dict(l=0, r=0, t=30, b=0),
+                height=500,
+                legend=dict(orientation="h", y=-0.2),
+                xaxis=dict(showgrid=True, gridcolor='#262730', zeroline=False),
+                yaxis=dict(showgrid=True, gridcolor='#262730', zeroline=False, ticksuffix="%"),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
             )
-            
-            # Hacemos las líneas un poco más gruesas para que se vean bien
-            fig.update_traces(line=dict(width=2.5))
-            
             st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning("No hay operaciones de bots todavía para mostrar rendimiento individual.")
 
-    elif menu == "🤖 FLOTA DE BOTS":
-        st.title("🧬 Análisis de la Flota")
-        bot_stats = df_trades.groupby(['magic', 'bot_name'])['net_profit'].sum().reset_index()
-        fig_donut = px.pie(bot_stats, values=abs(bot_stats['net_profit']), names='bot_name', hole=0.5, height=400).update_layout(template="plotly_dark")
-        st.plotly_chart(fig_donut, use_container_width=True)
-        
-        st.divider()
-        col_pos, col_neg = st.columns(2)
-        with col_pos:
-            st.markdown('<p class="column-title">🏆 Ganadores</p>', unsafe_allow_html=True)
-            for _, row in bot_stats[bot_stats['net_profit'] >= 0].iterrows():
-                st.markdown(f'<div class="bot-card" style="border-left-color: #00FFC8;"><small>{row["bot_name"]}</small><br><span class="pos-val">+{row["net_profit"]:,.2f} €</span></div>', unsafe_allow_html=True)
-        with col_neg:
-            st.markdown('<p class="column-title">⚠️ En Revisión</p>', unsafe_allow_html=True)
-            for _, row in bot_stats[bot_stats['net_profit'] < 0].iterrows():
-                st.markdown(f'<div class="bot-card" style="border-left-color: #FF4B4B;"><small>{row["bot_name"]}</small><br><span class="neg-val">{row["net_profit"]:,.2f} €</span></div>', unsafe_allow_html=True)
+    elif menu == "🤖 FLOTA":
+        st.title("Análisis por Magic Number")
+        # Aquí mantenemos las tarjetas pero con estilo Myfxbook
+        stats = df_trades.groupby('bot_name')['net_profit'].sum().reset_index()
+        for _, row in stats.iterrows():
+            color = "#00FFC8" if row['net_profit'] >= 0 else "#FF4B4B"
+            st.markdown(f"""
+                <div style="background:#161A22; padding:15px; border-left:5px solid {color}; border-radius:5px; margin-bottom:10px;">
+                    <span style="color:#888; font-size:12px;">{row['bot_name']}</span><br>
+                    <span style="font-size:18px; font-weight:bold;">${row['net_profit']:,.2f}</span>
+                </div>
+            """, unsafe_allow_html=True)
 
-    elif menu == "📜 EL GRIMORIO":
-        st.title("📜 El Grimorio")
-        st.dataframe(df_all[['closetime', 'bot_name', 'symbol', 'type', 'profit', 'commission', 'swap', 'comment']].sort_values('closetime', ascending=False), use_container_width=True, hide_index=True)
+    elif menu == "📜 HISTORIAL":
+        st.title("Historial de Operaciones")
+        st.dataframe(df_all[['closetime', 'bot_name', 'symbol', 'type', 'profit', 'net_profit']].sort_values('closetime', ascending=False), use_container_width=True)
 
 st.markdown("---")
-st.markdown("<p style='text-align: center; color: #4E5564;'>© 2026 Ahharyu Alchemic Trading Labs</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align: center; color: #4E5564; font-size: 10px;'>AHHARYU ALCHEMIC TRADING LABS | V5.0</p>", unsafe_allow_html=True)
