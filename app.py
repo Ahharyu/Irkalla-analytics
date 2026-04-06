@@ -55,17 +55,12 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 2. CREDENCIALES (RE-VERIFICADAS) ---
+# --- 2. CREDENCIALES ---
 SUPABASE_URL = "https://gnescqvodvrwsyhvymkw.supabase.co"
-# Asegúrate de que esta llave se pegue completa sin saltos de línea extraños
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImduZXNjcXZvZHZyd3N5aHZ5bWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTQ2NTEsImV4cCI6MjA5MDk5MDY1MX0.I1R8YwJHvXE24T09fsp15sWTZohq7iAGDI6FpxLNTqI"
 LOGO_URL = "https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo.png"
 
-# Inicialización segura
-try:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
-except Exception as e:
-    st.error(f"Error crítico de conexión: {e}")
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @st.cache_data(ttl=10)
 def load_data():
@@ -73,7 +68,6 @@ def load_data():
         res = supabase.table("trades").select("*").execute()
         df = pd.DataFrame(res.data)
         if not df.empty:
-            # Limpieza numérica
             for col in ['profit', 'commission', 'swap', 'magic']:
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             
@@ -84,14 +78,12 @@ def load_data():
             df['net_profit'] = df['profit'] + df['commission'] + df['swap']
             df['bot_name'] = df['magic'].map(nombres_bots).fillna("Bot: " + df['magic'].astype(str))
             
-            # --- LÓGICA DE CURVAS PARA EL GRÁFICO SERIO ---
-            # Calculamos la equity acumulada por cada bot individualmente
-            df['equity_individual'] = df.groupby('bot_name')['net_profit'].cumsum()
+            # Calculamos la ganancia ACUMULADA de cada bot (empezando desde 0€)
+            df['profit_acumulado'] = df.groupby('bot_name')['net_profit'].cumsum()
             
-            # Para la línea TOTAL, necesitamos la suma de todos en cada punto del tiempo
-            df['total_account_equity'] = df['net_profit'].cumsum()
-            
+            # Solo trades reales para estadísticas
             df_trades = df[df['type'].isin(['BUY', 'SELL'])].copy()
+            
             return df, df_trades
     except Exception as e:
         st.error(f"Error consultando Supabase: {e}")
@@ -113,13 +105,15 @@ with st.sidebar:
 
 # --- 4. SECCIONES ---
 if df_all.empty:
-    st.info("Sincronizando el laboratorio con el servidor central...")
+    st.info("Sincronizando el laboratorio...")
 else:
     if menu == "🏠 DASHBOARD":
         st.title("⚡ Centro de Mando")
         c1, c2, c3, c4 = st.columns(4)
+        
+        # El balance neto total se muestra aquí arriba, siempre visible
         balance_actual = df_all['net_profit'].sum()
-        c1.metric("Balance Real", f"{balance_actual:,.2f} €")
+        c1.metric("Balance Real Cuenta", f"{balance_actual:,.2f} €")
         
         win_rate = (len(df_trades[df_trades['net_profit'] > 0]) / len(df_trades) * 100) if not df_trades.empty else 0
         c2.metric("Win Rate", f"{win_rate:.1f}%")
@@ -132,29 +126,39 @@ else:
 
         st.divider()
         
-        # --- GRÁFICO INSTITUCIONAL MEJORADO ---
-        st.subheader("📈 Rendimiento Histórico por Activo / Bot")
+        # --- GRÁFICO DE RENDIMIENTO PUERTO (SIN BALANCE TOTAL) ---
+        st.subheader("📈 Curvas de Rendimiento Neto (Profit Acumulado)")
+        st.markdown("<small style='color: #888;'>Este gráfico muestra cuánto dinero ha generado cada bot individualmente, ignorando el capital inicial de la cuenta.</small>", unsafe_allow_html=True)
         
-        # Preparamos los datos para que Plotly pinte líneas separadas
-        # Primero la Equidad Total (Diferenciada)
-        fig = px.line(df_all, x='closetime', y='total_account_equity', 
-                      title='Equidad Total de la Cuenta',
-                      color_discrete_sequence=['#E1B12C']) # Color Oro
-        
-        # Añadimos las líneas de los bots individuales para comparar
-        for bot in df_all['bot_name'].unique():
-            bot_data = df_all[df_all['bot_name'] == bot]
-            fig.add_scatter(x=bot_data['closetime'], y=bot_data['equity_individual'], 
-                            mode='lines', name=bot, line=dict(width=1.5, dash='dot'))
+        # Filtramos para que NO aparezca el registro de 'Sistema/Balance' en el gráfico
+        # así el eje Y se ajusta solo a los beneficios reales de los bots
+        df_solo_bots = df_all[df_all['magic'] != 0].copy()
 
-        fig.update_layout(
-            template="plotly_dark", 
-            paper_bgcolor='rgba(0,0,0,0)', 
-            plot_bgcolor='rgba(0,0,0,0)',
-            hovermode="x unified",
-            legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
-        )
-        st.plotly_chart(fig, use_container_width=True)
+        if not df_solo_bots.empty:
+            fig = px.line(
+                df_solo_bots, 
+                x='closetime', 
+                y='profit_acumulado', 
+                color='bot_name',
+                color_discrete_sequence=px.colors.qualitative.Vivid
+            )
+
+            fig.update_layout(
+                template="plotly_dark", 
+                paper_bgcolor='rgba(0,0,0,0)', 
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis_title="Cronología de Operaciones",
+                yaxis_title="Beneficio Neto Acumulado (€)",
+                hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=-0.5, xanchor="center", x=0.5)
+            )
+            
+            # Hacemos las líneas un poco más gruesas para que se vean bien
+            fig.update_traces(line=dict(width=2.5))
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.warning("No hay operaciones de bots todavía para mostrar rendimiento individual.")
 
     elif menu == "🤖 FLOTA DE BOTS":
         st.title("🧬 Análisis de la Flota")
