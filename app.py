@@ -47,16 +47,20 @@ def load_data():
     res = supabase.table("trades").select("*").execute()
     df = pd.DataFrame(res.data)
     if not df.empty:
+        # Convertimos todo a número por seguridad
+        for col in ['profit', 'commission', 'swap']:
+            df[col] = pd.to_numeric(df.get(col, 0)).fillna(0)
+        
+        # CÁLCULO NETO: La verdad absoluta de la cuenta
+        df['net_profit'] = df['profit'] + df['commission'] + df['swap']
+        
         df['closetime'] = pd.to_datetime(df['closetime'])
         df = df.sort_values('closetime')
         
-        # Mapeo de nombres: Si no está en el diccionario, muestra el ID
-        df['bot_name'] = df['magic'].map(nombres_bots).fillna("Magic: " + df['magic'].astype(str))
+        # Equity basada en el Neto + Balance Inicial
+        df['equity'] = BALANCE_INICIAL + df['net_profit'].cumsum()
         
-        # Cálculo de Equity incluyendo el balance inicial manual
-        df['equity'] = BALANCE_INICIAL + df['profit'].cumsum()
-        
-        # Filtrar solo operaciones de mercado (No balances)
+        df['bot_name'] = df['magic'].map(nombres_bots).fillna("ID: " + df['magic'].astype(str))
         df_trades = df[df['type'].isin(['BUY', 'SELL'])].copy()
         return df, df_trades
     return pd.DataFrame(), pd.DataFrame()
