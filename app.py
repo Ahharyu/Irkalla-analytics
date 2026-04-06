@@ -39,12 +39,12 @@ else:
     # --- 3. CONTABILIDAD ---
     deposito_inicial = 100000.0
     balance_total = df['net_profit'].sum()
-    profit_bots_total = balance_total - deposito_inicial
+    profit_bots_final = balance_total - deposito_inicial # Nombre de variable único
     
-    # Fecha de inicio de la cuenta (Primer registro de la historia)
+    # Fecha de inicio de la cuenta
     fecha_inicio_cuenta = df['closetime'].min()
     
-    # Filtro de bots (Excluimos el depósito de 100k)
+    # Filtro de bots (Excluimos el depósito)
     df_solo_bots = df[df['profit'] < 50000].copy()
 
     # --- 4. NAVEGACIÓN ---
@@ -56,7 +56,7 @@ else:
         st.title("⚡ Centro de Mando")
         c1, c2, c3 = st.columns(3)
         c1.metric("Balance Actual", f"{balance_total:,.2f} €")
-        c2.metric("Profit Neto Bots", f"{profit_total_bots_total:,.2f} €")
+        c2.metric("Profit Neto Bots", f"{profit_bots_final:,.2f} €")
         c3.metric("Depósito Base", f"{deposito_inicial:,.2f} €")
         
         st.divider()
@@ -77,14 +77,13 @@ else:
             b_df = b_df.sort_values('closetime')
             b_df['cum'] = b_df['net_profit'].cumsum()
             
-            # --- TRUCO TEMPORAL ---
-            # Creamos un punto artificial en la fecha de inicio con valor 0
-            # para que la línea empiece desde el origen de la cuenta
+            # Sincronización temporal: empezamos en 0 el día del depósito
             inicio_row = pd.DataFrame({'closetime': [fecha_inicio_cuenta], 'cum': [0.0]})
             b_series = pd.concat([inicio_row, b_df[['closetime', 'cum']]]).sort_values('closetime')
             return b_series
 
         if opcion == "📊 COMPARATIVA GLOBAL":
+            st.subheader(f"Beneficio Acumulado: {profit_bots_final:,.2f} €")
             for m in bot_ids:
                 serie = get_bot_series(m)
                 fig_bots.add_trace(go.Scatter(x=serie['closetime'], y=serie['cum'], name=f"BOT {int(m)}", mode='lines'))
