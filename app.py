@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 # --- 1. CONFIGURACIÓN ---
 st.set_page_config(page_title="Ahharyu Alchemic Labs", layout="wide", page_icon="🧪")
@@ -12,7 +11,6 @@ st.markdown("""
     .main { background-color: #0E1117; }
     .sidebar-logo { display: flex; justify-content: center; margin-bottom: 10px; }
     .sidebar-logo img { width: 140px; border-radius: 10px; border: 1px solid #E1B12C; }
-    /* Estilo de Tarjetas de Bot */
     .bot-stat-card {
         background-color: #161A22;
         border: 1px solid #262730;
@@ -46,9 +44,9 @@ def load_data():
             
             deposit = 100000.0
             df['growth_pct'] = (df['net_profit'].cumsum() / deposit) * 100
-            # Nombre limpio para los bots
             df['bot_label'] = df['magic'].apply(lambda x: "Depósito/Sistema" if x==0 else f"BOT {int(x)}")
-            # Beneficio acumulado por bot
+            
+            # Cálculo de equidad acumulada individual por bot
             df['bot_profit_cum'] = df.groupby('magic')['net_profit'].cumsum()
             
             return df, deposit
@@ -71,7 +69,6 @@ if df_all.empty:
 else:
     if menu == "🏠 DASHBOARD TOTAL":
         st.title("Performance Global")
-        # Gráfico estilo Myfxbook que ya teníamos, pero limpio
         fig = go.Figure()
         fig.add_trace(go.Scatter(
             x=df_all['closetime'], y=df_all['growth_pct'],
@@ -81,7 +78,6 @@ else:
         fig.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig, use_container_width=True)
         
-        # Métricas rápidas
         c1, c2, c3 = st.columns(3)
         neto = df_all['net_profit'].sum()
         c1.metric("Beneficio Neto", f"{neto:,.2f} €")
@@ -89,21 +85,39 @@ else:
         c3.metric("Crecimiento", f"{(neto/deposit)*100:.3f} %")
 
     elif menu == "🤖 INSPECTOR DE BOTS":
-        st.title("Infiltración en la Flota")
+        st.title("Análisis de la Flota")
         
-        # Filtramos para no mostrar el Magic 0 (Sistema) como bot
-        bots_disponibles = [b for b in df_all['bot_label'].unique() if "BOT" in b]
+        # Filtramos para no mostrar el Magic 0
+        bots_reales = [b for b in df_all['bot_label'].unique() if "BOT" in b]
         
-        if not bots_disponibles:
-            st.info("No hay actividad de bots individuales detectada todavía.")
-        else:
-            selected_bot = st.selectbox("Selecciona el Bot para analizar:", bots_disponibles)
+        # AÑADIMOS LA OPCIÓN "TODOS"
+        opciones = ["🔍 VER TODA LA FLOTA"] + bots_reales
+        selected_bot = st.selectbox("Seleccionar unidad:", opciones)
+        
+        fig_bots = go.Figure()
+
+        if selected_bot == "🔍 VER TODA LA FLOTA":
+            st.subheader("Rendimiento Comparativo (Profit Neto)")
+            # Pintamos una línea por cada bot real
+            for bot in bots_reales:
+                bot_df = df_all[df_all['bot_label'] == bot]
+                fig_bots.add_trace(go.Scatter(
+                    x=bot_df['closetime'], 
+                    y=bot_df['bot_profit_cum'],
+                    mode='lines',
+                    name=bot,
+                    line=dict(width=2)
+                ))
             
-            # Datos específicos del bot
+            # Métricas generales de la suma de los bots
+            neto_bots = df_all[df_all['magic'] != 0]['net_profit'].sum()
+            st.info(f"Beneficio acumulado de todos los bots: {neto_bots:,.2f} €")
+
+        else:
+            # Vista individual (la que ya tenías)
             bot_data = df_all[df_all['bot_label'] == selected_bot].copy()
             
-            # Layout de métricas del bot
-            m1, m2, m3, m4 = st.columns(4)
+            m1, m2, m3 = st.columns(3)
             profit_bot = bot_data['net_profit'].sum()
             ops = len(bot_data)
             win_rate = (len(bot_data[bot_data['net_profit'] > 0]) / ops * 100) if ops > 0 else 0
@@ -111,33 +125,28 @@ else:
             m1.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">Beneficio</p><p class="metric-val">{profit_bot:,.2f}€</p></div>', unsafe_allow_html=True)
             m2.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">Operaciones</p><p class="metric-val">{ops}</p></div>', unsafe_allow_html=True)
             m3.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">Win Rate</p><p class="metric-val">{win_rate:.1f}%</p></div>', unsafe_allow_html=True)
-            m4.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">ID Magic</p><p class="metric-val">{selected_bot.split()[-1]}</p></div>', unsafe_allow_html=True)
 
-            st.divider()
-            
-            # GRÁFICO INDIVIDUAL DEL BOT (Sin escala de 100k)
-            st.subheader(f"Curva de Equidad Propia: {selected_bot}")
-            fig_bot = go.Figure()
-            fig_bot.add_trace(go.Scatter(
+            fig_bots.add_trace(go.Scatter(
                 x=bot_data['closetime'], 
                 y=bot_data['bot_profit_cum'],
                 mode='lines+markers',
                 name=selected_bot,
-                line=dict(color='#00FFC8', width=2),
-                marker=dict(size=4)
+                line=dict(color='#00FFC8', width=3)
             ))
-            fig_bot.update_layout(
-                template="plotly_dark",
-                height=450,
-                xaxis_title="Tiempo",
-                yaxis_title="Euros (€)",
-                paper_bgcolor='rgba(0,0,0,0)',
-                plot_bgcolor='rgba(0,0,0,0)',
-                xaxis=dict(showgrid=True, gridcolor='#262730'),
-                yaxis=dict(showgrid=True, gridcolor='#262730')
-            )
-            st.plotly_chart(fig_bot, use_container_width=True)
+
+        fig_bots.update_layout(
+            template="plotly_dark",
+            height=550,
+            xaxis_title="Evolución Temporal",
+            yaxis_title="Euros (€)",
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            xaxis=dict(showgrid=True, gridcolor='#262730'),
+            yaxis=dict(showgrid=True, gridcolor='#262730'),
+            legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+        )
+        st.plotly_chart(fig_bots, use_container_width=True)
 
     elif menu == "📜 REGISTRO":
-        st.title("El Grimorio de Operaciones")
+        st.title("El Grimorio")
         st.dataframe(df_all[['closetime', 'bot_label', 'symbol', 'type', 'net_profit', 'comment']].sort_values('closetime', ascending=False), use_container_width=True)
