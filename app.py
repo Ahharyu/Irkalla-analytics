@@ -105,24 +105,27 @@ else:
     elif menu == "🤖 Flota de Bots":
         st.title("🧬 Rendimiento por Estrategia")
         
-        # Agrupación por Magic (identificador del bot)
-        bot_perf = df_trades.groupby('magic')['profit'].sum().reset_index()
-        bot_perf = bot_perf[bot_perf['profit'] != 0]
-
-        # Gráfico Donut para evitar el desorden de las barras
-        fig_donut = px.pie(
-            bot_perf, 
-            values=abs(bot_perf['profit']), 
-            names='magic', 
-            hole=0.6,
-            title="Peso de cada Bot en el Profit Total",
-            color_discrete_sequence=px.colors.sequential.YlOrBr # Colores Alquímicos
-        )
-        fig_donut.update_layout(template="plotly_dark")
-        st.plotly_chart(fig_donut, use_container_width=True)
+        # FILTRO CRÍTICO: Solo bots con Magic > 0 (Ignora balances y manuales)
+        bot_perf = df_trades[df_trades['magic'] > 0].copy()
+        bot_perf = bot_perf.groupby('magic')['profit'].sum().reset_index()
         
-        st.subheader("Desglose de Operativa")
-        st.dataframe(bot_perf.sort_values(by='profit', ascending=False), use_container_width=True, hide_index=True)
+        if bot_perf.empty:
+            st.info("No se han detectado operaciones de bots (Magic > 0) todavía.")
+        else:
+            # Gráfico Donut de rendimiento real
+            fig_donut = px.pie(
+                bot_perf, 
+                values=abs(bot_perf['profit']), 
+                names='magic', 
+                hole=0.6,
+                title="Distribución de Beneficio por Bot Automático",
+                color_discrete_sequence=px.colors.sequential.YlOrBr
+            )
+            fig_donut.update_layout(template="plotly_dark")
+            st.plotly_chart(fig_donut, use_container_width=True)
+            
+            st.subheader("Ranking de Eficiencia")
+            st.dataframe(bot_perf.sort_values(by='profit', ascending=False), use_container_width=True, hide_index=True)
 
     elif menu == "📜 El Grimorio":
         st.title("📜 Historial de Transacciones")
