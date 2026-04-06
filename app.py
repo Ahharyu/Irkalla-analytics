@@ -2,41 +2,43 @@ import streamlit as st
 import pandas as pd
 from supabase import create_client, Client
 
-# --- CONFIGURACIÓN DE PÁGINA ---
+# --- ESTILO Y CONFIGURACIÓN ---
 st.set_page_config(page_title="Ahharyu Alchemic Trading Labs", layout="wide", page_icon="🧪")
 
 # --- CONEXIÓN ---
 SUPABASE_URL = "https://gnescqvodvrwsyhvymkw.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImduZXNjcXZvZHZyd3N5aHZ5bWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTQ2NTEsImV4cCI6MjA5MDk5MDY1MX0.I1R8YwJHvXE24T09fsp15sWTZohq7iAGDI6FpxLNTqI"
-
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-@st.cache_data(ttl=10)
-def get_clean_data():
-    response = supabase.table("trades").select("*").execute()
-    df = pd.DataFrame(response.data)
-    if df.empty: return df
-    # Conversión estricta a números
-    for c in ['profit', 'commission', 'swap']:
-        df[c] = pd.to_numeric(df[c], errors='coerce').fillna(0.0)
+# --- CARGA DE DATOS ---
+@st.cache_data(ttl=5)
+def load_data():
+    res = supabase.table("trades").select("*").execute()
+    df = pd.DataFrame(res.data)
+    if not df.empty:
+        for col in ['profit', 'commission', 'swap', 'magic']:
+            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
     return df
 
 # --- INTERFAZ ---
 st.title("🧪 Ahharyu Alchemic Trading Labs")
 st.divider()
 
-df = get_data() if 'get_data' in locals() else get_clean_data()
+df = load_data()
 
 if not df.empty:
-    # LA SUMA TOTAL SIN FILTROS
+    # EL CÁLCULO TOTAL
     total_neto = df['profit'].sum() + df['commission'].sum() + df['swap'].sum()
     
-    c1, c2, c3 = st.columns(3)
-    c1.metric("BALANCE NETO (EQUITY)", f"{total_neto:,.2f} €")
-    c2.metric("BENEFICIO BRUTO", f"{df['profit'].sum():,.2f} €")
-    c3.metric("COMISIONES Y SWAPS", f"{(df['commission'].sum() + df['swap'].sum()):,.2f} €")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("BALANCE NETO ACTUAL", f"{total_neto:,.2f} €")
+    col2.metric("PROFIT BRUTO", f"{df['profit'].sum():,.2f} €")
+    col3.metric("GASTOS (Comm/Swap)", f"{(df['commission'].sum() + df['swap'].sum()):,.2f} €", delta_color="inverse")
 
-    st.write("### 📜 Historial de Operaciones Sincronizadas")
+    st.write("### 📜 Historial de Transacciones")
     st.dataframe(df.sort_values('closetime', ascending=False), use_container_width=True)
 else:
-    st.warning("Base de datos vacía.")
+    st.warning("⚠️ Sin datos. Ejecuta Irkalla.mq5 en MT5.")
+
+st.divider()
+st.caption("Ahharyu Labs | Sincronización de Alta Precisión")
