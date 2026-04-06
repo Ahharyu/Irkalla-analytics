@@ -11,6 +11,14 @@ st.set_page_config(
     layout="wide"
 )
 
+# Estilo para mejorar la visualización de métricas
+st.markdown("""
+    <style>
+    [data-testid="stMetricValue"] { font-size: 28px; }
+    .main { background-color: #0E1117; }
+    </style>
+    """, unsafe_allow_html=True)
+
 # 2. CREDENCIALES
 SUPABASE_URL = "https://gnescqvodvrwsyhvymkw.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImduZXNjcXZvZHZyd3N5aHZ5bWt3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU0MTQ2NTEsImV4cCI6MjA5MDk5MDY1MX0.I1R8YwJHvXE24T09fsp15sWTZohq7iAGDI6FpxLNTqI"
@@ -24,77 +32,105 @@ supabase = init_connection()
 # 3. CARGA DE DATOS
 @st.cache_data(ttl=10)
 def load_data():
-    res = supabase.table("trades").select("*").execute()
-    df = pd.DataFrame(res.data)
-    if not df.empty:
-        for col in ['profit', 'commission', 'swap', 'magic']:
-            df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
-        df['closetime'] = pd.to_datetime(df['closetime'])
-        df['net_result'] = df['profit'] + df['commission'] + df['swap']
-    return df
+    try:
+        res = supabase.table("trades").select("*").execute()
+        df = pd.DataFrame(res.data)
+        if not df.empty:
+            # Conversión de columnas financieras (las 9 columnas)
+            for col in ['profit', 'commission', 'swap', 'magic']:
+                df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
+            df['closetime'] = pd.to_datetime(df['closetime'])
+            # Resultado neto por operación
+            df['net_result'] = df['profit'] + df['commission'] + df['swap']
+        return df
+    except Exception as e:
+        st.error(f"Error cargando datos: {e}")
+        return pd.DataFrame()
 
 df = load_data()
 
-# 4. SIDEBAR CON LOGO DE GITHUB
+# 4. SIDEBAR (Navegación y Logo)
 with st.sidebar:
-    # --- CAMBIO CLAVE: LOGO DESDE GITHUB ---
-    # Si tu logo se llama 'logo.png', usa "logo.png". 
-    # Si está en una carpeta, usa "assets/logo.png"
-    logo_path = "logo empresa.png" 
-    if os.path.exists(logo_path):
-        st.image(logo_path, width=150)
+    # Intenta cargar el logo desde la raíz del repositorio de GitHub
+    if os.path.exists("logo empresa.png"):
+        st.image("logo.png", width=180)
     else:
-        st.write("🧪 **Ahharyu Labs**") # Fallback si el archivo no se encuentra
+        st.title("🧪 Ahharyu Labs")
     
     st.markdown("---")
-    menu = st.radio("Navegación", ["📊 Dashboard", "🤖 Análisis por Bot", "📜 Historial"])
+    menu = st.radio(
+        "Secciones",
+        ["📊 Dashboard Principal", "🤖 Análisis de Bots", "📜 Historial Completo"]
+    )
     st.divider()
     st.caption("Firma: Ahharyu Alchemic Trading Labs")
+    st.caption("v4.0 - Sincronización Total")
 
 # --- LÓGICA DE PANTALLAS ---
 
 if not df.empty:
-    if menu == "📊 Dashboard":
-        st.header("🧪 Dashboard de Alquimia")
+    # Cálculos globales para las métricas superiores
+    total_neto = df['net_result'].sum()
+    total_bruto = df['profit'].sum()
+    total_gastos = df['commission'].sum() + df['swap'].sum()
+
+    if menu == "📊 Dashboard Principal":
+        st.header("🧪 Estado de la Alquimia Financiera")
         
-        # MÉTRICAS TOP (Corregidas al céntimo)
-        total_neto = df['net_result'].sum()
+        # Bloque de métricas destacadas
         m1, m2, m3 = st.columns(3)
-        m1.metric("BALANCE NETO", f"{total_neto:,.2f} €")
-        m2.metric("BENEFICIO BRUTO", f"{df['profit'].sum():,.2f} €")
-        m3.metric("COMISIONES + SWAPS", f"{(df['commission'].sum() + df['swap'].sum()):,.2f} €", delta_color="inverse")
+        m1.metric("BALANCE NETO (EQUITY)", f"{total_neto:,.2f} €")
+        m2.metric("BENEFICIO BRUTO", f"{total_bruto:,.2f} €")
+        m3.metric("COMISIONES + SWAPS", f"{total_gastos:,.2f} €", delta_color="inverse")
 
         st.divider()
 
-        c_left, c_right = st.columns([2, 1])
-        with c_left:
-            st.write("### 📈 Curva de Equidad")
-            df_c = df.sort_values('closetime')
-            df_c['cum_net'] = df_c['net_result'].cumsum()
-            fig_l = px.line(df_c, x='closetime', y='cum_net', template="plotly_dark", color_discrete_sequence=['#00CC96'])
-            st.plotly_chart(fig_l, use_container_width=True)
+        # Gráficos principales
+        col_graf, col_donut = st.columns([2, 1])
 
-        with c_right:
-            st.write("### 🍩 Activos (Profit Neto)")
-            df_trading = df[df['type'] != 'BALANCE']
-            fig_p = px.pie(df_trading, names='symbol', values='net_result', hole=0.5, template="plotly_dark")
-            st.plotly_chart(fig_p, use_container_width=True)
+        with col_graf:
+            st.subheader("📈 Curva de Crecimiento")
+            df_sorted = df.sort_values('closetime')
+            df_sorted['cumulative_balance'] = df_sorted['net_result'].cumsum()
+            fig_equity = px.line(df_sorted, x='closetime', y='cumulative_balance', 
+                                 template="plotly_dark", color_discrete_sequence=['#00e676'])
+            st.plotly_chart(fig_equity, use_container_width=True)
 
-    elif menu == "🤖 Análisis por Bot":
-        st.header("Análisis de Robots (Magic Number)")
-        # Agrupación por Magic
-        bot_df = df.groupby('magic').agg({
+        with col_donut:
+            st.subheader("🍩 Distribución por Activo")
+            # Ignoramos la fila de BALANCE para el gráfico de activos
+            df_trades = df[df['type'] != 'BALANCE']
+            if not df_trades.empty:
+                fig_donut = px.pie(df_trades, names='symbol', values='net_result', 
+                                   hole=0.6, template="plotly_dark")
+                st.plotly_chart(fig_donut, use_container_width=True)
+
+    elif menu == "🤖 Análisis de Bots":
+        st.header("🤖 Rendimiento por Robot (Magic Number)")
+        
+        # Agrupación estadística por Bot
+        bots = df.groupby('magic').agg({
             'net_result': 'sum',
             'commission': 'sum',
             'swap': 'sum',
             'ticket': 'count'
         }).reset_index()
-        bot_df.columns = ['ID Bot (Magic)', 'Resultado Neto', 'Comisiones', 'Swaps', 'Operaciones']
-        st.table(bot_df.style.format({'Resultado Neto': '{:,.2f} €', 'Comisiones': '{:,.2f} €', 'Swaps': '{:,.2f} €'}))
+        bots.columns = ['ID Bot (Magic)', 'Profit Neto', 'Comisiones', 'Swaps', 'Operaciones']
+        
+        st.table(bots.style.format({
+            'Profit Neto': '{:,.2f} €',
+            'Comisiones': '{:,.2f} €',
+            'Swaps': '{:,.2f} €'
+        }))
 
-    elif menu == "📜 Historial":
-        st.header("Registros Completos")
+    elif menu == "📜 Historial Completo":
+        st.header("📜 Libro de Registros Alquímicos")
+        # Mostrar el historial ordenado por fecha de cierre
         st.dataframe(df.sort_values('closetime', ascending=False), use_container_width=True)
 
 else:
-    st.error("No hay datos. Ejecuta Irkalla.mq5 en MT5.")
+    st.warning("⚠️ Sin datos detectados. El sistema está a la espera de registros desde MT5.")
+
+# Pie de página lateral
+st.sidebar.markdown("---")
+st.sidebar.info("Conexión: Supabase v1.0.4")
