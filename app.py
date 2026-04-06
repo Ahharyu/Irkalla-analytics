@@ -52,7 +52,7 @@ df = get_data()
 # --- 3. BARRA LATERAL (MENÚ DE NAVEGACIÓN) ---
 with st.sidebar:
     # Espacio para tu logo (Sube logo.png a GitHub)
-    st.image("https://raw.githubusercontent.com/TU_USER/TU_REPO/main/logo.png", width=180)
+    st.image("https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/logo empresa.png", width=180)
     st.markdown("<h2 style='text-align: center; color: #E1B12C;'>Ahharyu Labs</h2>", unsafe_allow_html=True)
     st.markdown("---")
     
