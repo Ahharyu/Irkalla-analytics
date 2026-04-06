@@ -11,15 +11,11 @@ st.markdown("""
     .main { background-color: #0E1117; }
     .sidebar-logo { display: flex; justify-content: center; margin-bottom: 10px; }
     .sidebar-logo img { width: 140px; border-radius: 10px; border: 1px solid #E1B12C; }
-    .bot-stat-card {
-        background-color: #161A22;
-        border: 1px solid #262730;
-        padding: 20px;
-        border-radius: 10px;
-        text-align: center;
-    }
-    .metric-val { font-size: 24px; font-weight: bold; color: #E1B12C; }
-    .metric-lbl { font-size: 12px; color: #888; text-transform: uppercase; }
+    .info-panel { background-color: #161A22; padding: 15px; border-radius: 5px; border: 1px solid #262730; }
+    .info-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid #262730; font-size: 14px; }
+    .info-label { color: #888; }
+    .info-value { color: #EEE; font-weight: bold; }
+    .value-pos { color: #00FFC8; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -42,111 +38,96 @@ def load_data():
             df = df.sort_values('closetime')
             df['net_profit'] = df['profit'] + df['commission'] + df['swap']
             
-            deposit = 100000.0
-            df['growth_pct'] = (df['net_profit'].cumsum() / deposit) * 100
-            df['bot_label'] = df['magic'].apply(lambda x: "Depósito/Sistema" if x==0 else f"BOT {int(x)}")
+            # Identificación clara
+            df['bot_label'] = df['magic'].apply(lambda x: "Sistema" if x==0 else f"Bot {int(x)}")
+            # Acumulado individual (sin importar el balance total)
+            df['profit_cum'] = df.groupby('magic')['net_profit'].cumsum()
             
-            # Cálculo de equidad acumulada individual por bot
-            df['bot_profit_cum'] = df.groupby('magic')['net_profit'].cumsum()
-            
-            return df, deposit
+            return df
     except: pass
-    return pd.DataFrame(), 100000.0
+    return pd.DataFrame()
 
-df_all, deposit = load_data()
+df_all = load_data()
 
-# --- 3. SIDEBAR ---
+# --- 3. LÓGICA DE INTERFAZ ---
 with st.sidebar:
     st.markdown(f'<div class="sidebar-logo"><img src="{LOGO_URL}"></div>', unsafe_allow_html=True)
-    st.markdown("<h3 style='text-align:center; color:#E1B12C;'>AHHARYU</h3>", unsafe_allow_html=True)
-    menu = st.radio("SECCIONES", ["🏠 DASHBOARD TOTAL", "🤖 INSPECTOR DE BOTS", "📜 REGISTRO"], label_visibility="collapsed")
+    st.markdown("<h3 style='text-align:center; color:#E1B12C;'>AHHARYU LABS</h3>", unsafe_allow_html=True)
     st.markdown("---")
-    st.info(f"Capital: {deposit:,.0f} €")
+    
+    # Selector de Bot (El "Todos" ahora es el corazón del sistema)
+    opciones = ["📊 VER TODA LA FLOTA"] + sorted([b for b in df_all['bot_label'].unique() if "Bot" in b])
+    seleccion = st.selectbox("Seleccionar Unidad:", opciones)
 
-# --- 4. SECCIONES ---
+# --- 4. CUERPO PRINCIPAL ---
 if df_all.empty:
-    st.warning("Laboratorio sin datos...")
+    st.warning("Conectando con el oráculo de datos...")
 else:
-    if menu == "🏠 DASHBOARD TOTAL":
-        st.title("Performance Global")
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(
-            x=df_all['closetime'], y=df_all['growth_pct'],
-            name="Crecimiento (%)", line=dict(color='#FF4B4B', width=3),
-            fill='tozeroy', fillcolor='rgba(255, 75, 75, 0.05)'
-        ))
-        fig.update_layout(template="plotly_dark", height=400, margin=dict(l=0,r=0,t=0,b=0), paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
-        st.plotly_chart(fig, use_container_width=True)
-        
-        c1, c2, c3 = st.columns(3)
-        neto = df_all['net_profit'].sum()
-        c1.metric("Beneficio Neto", f"{neto:,.2f} €")
-        c2.metric("Balance Total", f"{deposit+neto:,.2f} €")
-        c3.metric("Crecimiento", f"{(neto/deposit)*100:.3f} %")
+    # Panel de Estadísticas (Estilo Institucional)
+    beneficio_total = df_all['net_profit'].sum()
+    deposito_inicial = 100000.0
+    balance_final = deposito_inicial + beneficio_total
+    rentabilidad = (beneficio_total / deposito_inicial) * 100
 
-    elif menu == "🤖 INSPECTOR DE BOTS":
-        st.title("Análisis de la Flota")
-        
-        # Filtramos para no mostrar el Magic 0
-        bots_reales = [b for b in df_all['bot_label'].unique() if "BOT" in b]
-        
-        # AÑADIMOS LA OPCIÓN "TODOS"
-        opciones = ["🔍 VER TODA LA FLOTA"] + bots_reales
-        selected_bot = st.selectbox("Seleccionar unidad:", opciones)
-        
-        fig_bots = go.Figure()
+    col_stats, col_main = st.columns([1, 3])
 
-        if selected_bot == "🔍 VER TODA LA FLOTA":
-            st.subheader("Rendimiento Comparativo (Profit Neto)")
-            # Pintamos una línea por cada bot real
-            for bot in bots_reales:
-                bot_df = df_all[df_all['bot_label'] == bot]
-                fig_bots.add_trace(go.Scatter(
-                    x=bot_df['closetime'], 
-                    y=bot_df['bot_profit_cum'],
-                    mode='lines',
-                    name=bot,
-                    line=dict(width=2)
-                ))
-            
-            # Métricas generales de la suma de los bots
-            neto_bots = df_all[df_all['magic'] != 0]['net_profit'].sum()
-            st.info(f"Beneficio acumulado de todos los bots: {neto_bots:,.2f} €")
-
+    with col_stats:
+        st.markdown(f"""
+            <div class="info-panel">
+                <div class="info-row"><span class="info-label">Ganancia:</span><span class="info-value value-pos">+{rentabilidad:.2f}%</span></div>
+                <div class="info-row"><span class="info-label">Abs. Ganancia:</span><span class="info-value value-pos">+{rentabilidad:.2f}%</span></div>
+                <div class="info-row"><span class="info-label">Saldo:</span><span class="info-value">{balance_final:,.2f} €</span></div>
+                <div class="info-row"><span class="info-label">Beneficio:</span><span class="info-value value-pos">{beneficio_total:,.2f} €</span></div>
+                <div class="info-row"><span class="info-label">Depósitos:</span><span class="info-value">{deposito_inicial:,.0f} €</span></div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        st.markdown("---")
+        # Mostrar trades recientes del bot seleccionado
+        st.caption("Últimos Movimientos")
+        if seleccion == "📊 VER TODA LA FLOTA":
+            mini_df = df_all[df_all['magic'] != 0]
         else:
-            # Vista individual (la que ya tenías)
-            bot_data = df_all[df_all['bot_label'] == selected_bot].copy()
-            
-            m1, m2, m3 = st.columns(3)
-            profit_bot = bot_data['net_profit'].sum()
-            ops = len(bot_data)
-            win_rate = (len(bot_data[bot_data['net_profit'] > 0]) / ops * 100) if ops > 0 else 0
-            
-            m1.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">Beneficio</p><p class="metric-val">{profit_bot:,.2f}€</p></div>', unsafe_allow_html=True)
-            m2.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">Operaciones</p><p class="metric-val">{ops}</p></div>', unsafe_allow_html=True)
-            m3.markdown(f'<div class="bot-stat-card"><p class="metric-lbl">Win Rate</p><p class="metric-val">{win_rate:.1f}%</p></div>', unsafe_allow_html=True)
+            mini_df = df_all[df_all['bot_label'] == seleccion]
+        st.dataframe(mini_df[['closetime', 'net_profit']].tail(5).sort_values('closetime', ascending=False), hide_index=True)
 
-            fig_bots.add_trace(go.Scatter(
-                x=bot_data['closetime'], 
-                y=bot_data['bot_profit_cum'],
-                mode='lines+markers',
-                name=selected_bot,
-                line=dict(color='#00FFC8', width=3)
+    with col_main:
+        fig = go.Figure()
+
+        if seleccion == "📊 VER TODA LA FLOTA":
+            # Línea de crecimiento total de la cuenta en % (Eje secundario oculto para escala)
+            # Para no "aplastar", graficamos todos los bots en su profit real
+            bots_unicos = [b for b in df_all['bot_label'].unique() if "Bot" in b]
+            for bot in bots_unicos:
+                bot_df = df_all[df_all['bot_label'] == bot]
+                fig.add_trace(go.Scatter(
+                    x=bot_df['closetime'], y=bot_df['profit_cum'],
+                    name=bot, mode='lines', line=dict(width=2)
+                ))
+            st.subheader("Análisis Comparativo de Beneficio Neto (€)")
+        else:
+            # Vista de un solo bot
+            bot_df = df_all[df_all['bot_label'] == seleccion]
+            fig.add_trace(go.Scatter(
+                x=bot_df['closetime'], y=bot_df['profit_cum'],
+                name=seleccion, mode='lines+markers',
+                line=dict(color='#00FFC8', width=3),
+                fill='tozeroy', fillcolor='rgba(0, 255, 200, 0.05)'
             ))
+            st.subheader(f"Rendimiento Detallado: {seleccion}")
 
-        fig_bots.update_layout(
+        fig.update_layout(
             template="plotly_dark",
-            height=550,
-            xaxis_title="Evolución Temporal",
-            yaxis_title="Euros (€)",
+            height=500,
+            hovermode="x unified",
             paper_bgcolor='rgba(0,0,0,0)',
             plot_bgcolor='rgba(0,0,0,0)',
+            margin=dict(l=0, r=0, t=20, b=0),
             xaxis=dict(showgrid=True, gridcolor='#262730'),
-            yaxis=dict(showgrid=True, gridcolor='#262730'),
-            legend=dict(orientation="h", yanchor="bottom", y=-0.3, xanchor="center", x=0.5)
+            yaxis=dict(showgrid=True, gridcolor='#262730', title="Euros (€)"),
+            legend=dict(orientation="h", y=-0.2)
         )
-        st.plotly_chart(fig_bots, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
 
-    elif menu == "📜 REGISTRO":
-        st.title("El Grimorio")
-        st.dataframe(df_all[['closetime', 'bot_label', 'symbol', 'type', 'net_profit', 'comment']].sort_values('closetime', ascending=False), use_container_width=True)
+st.markdown("---")
+st.markdown("<p style='text-align: center; color: #4E5564; font-size: 10px;'>AHHARYU ALCHEMIC TRADING LABS | SISTEMA UNIFICADO V7.0</p>", unsafe_allow_html=True)
