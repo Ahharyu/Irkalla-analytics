@@ -13,7 +13,7 @@ LOGO_URL = "https://raw.githubusercontent.com/ahharyu/irkalla-analytics/main/log
 
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-@st.cache_data(ttl=5)
+@st.cache_data(ttl=2)
 def load_data():
     try:
         res = supabase.table("trades").select("*").execute()
@@ -23,67 +23,74 @@ def load_data():
                 df[col] = pd.to_numeric(df[col], errors='coerce').fillna(0.0)
             df['closetime'] = pd.to_datetime(df['closetime'])
             df = df.sort_values('closetime')
-            # El beneficio neto de cada fila
+            # El neto real es la suma de estos tres campos
             df['net_profit'] = df['profit'] + df['commission'] + df['swap']
-            # Etiqueta de bot
-            df['bot_label'] = df['magic'].apply(lambda x: "SISTEMA" if x == 0 else f"BOT {int(x)}")
-            # Acumulado individual (empezando en 0)
-            df['bot_profit_cum'] = df.groupby('magic')['net_profit'].cumsum()
             return df
     except: pass
     return pd.DataFrame()
 
 df = load_data()
 
-# --- 3. NAVEGACIÓN ---
+# --- 3. BARRA LATERAL ---
 with st.sidebar:
     st.image(LOGO_URL, width=140)
     st.markdown("<h3 style='text-align:center;'>AHHARYU LABS</h3>", unsafe_allow_html=True)
     st.divider()
-    # Mantenemos el menú que querías
     menu = st.radio("SECCIONES", ["🏠 DASHBOARD", "🤖 BOTS", "📜 HISTORIAL"])
 
 if df.empty:
-    st.error("Error cargando datos...")
+    st.error("Esperando datos...")
 else:
-    # --- 4. VERDADES MATEMÁTICAS (Aquí no se toca nada) ---
-    balance_total = df['net_profit'].sum()
-    beneficio_bots = df[df['magic'] != 0]['net_profit'].sum()
-    deposito_inicial = df[df['magic'] == 0]['net_profit'].sum()
+    # --- 4. ARITMÉTICA BÁSICA ---
+    
+    # Balance Actual: Todo lo que hay en la tabla sumado
+    balance_actual = df['net_profit'].sum()
+    
+    # Depósito: Solo el valor de la fila magic 0
+    deposito_puro = df[df['magic'] == 0]['net_profit'].sum()
+    
+    # El beneficio de los bots es la diferencia simple
+    profit_total_bots = balance_actual - deposito_puro
 
     if menu == "🏠 DASHBOARD":
         st.title("⚡ Centro de Mando")
         c1, c2, c3 = st.columns(3)
-        c1.metric("Balance Total", f"{balance_total:,.2f} €")
-        c2.metric("Beneficio Bots", f"{beneficio_bots:,.2f} €")
-        c3.metric("Depósito", f"{deposito_inicial:,.2f} €")
+        
+        c1.metric("Balance Total", f"{balance_actual:,.2f} €")
+        c2.metric("Beneficio Bots", f"{profit_total_bots:,.2f} €")
+        c3.metric("Depósito Inicial", f"{deposito_puro:,.2f} €")
         
         st.divider()
-        # Curva de Equidad Total
+        # CURVA TOTAL (Línea pura)
         df['equity_total'] = df['net_profit'].cumsum()
-        fig_total = go.Figure(go.Scatter(x=df['closetime'], y=df['equity_total'], fill='tozeroy', line=dict(color='#E1B12C')))
-        fig_total.update_layout(template="plotly_dark", title="Evolución Cuenta Principal")
+        fig_total = go.Figure(go.Scatter(x=df['closetime'], y=df['equity_total'], mode='lines', line=dict(color='#E1B12C', width=2)))
+        fig_total.update_layout(template="plotly_dark", title="Equidad Total de la Cuenta", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_total, use_container_width=True)
 
     elif menu == "🤖 BOTS":
-        st.title("Inspección de Flota")
-        listado = sorted([b for b in df['bot_label'].unique() if "BOT" in b])
-        opcion = st.selectbox("Unidad:", ["🔍 VER TODOS"] + listado)
+        st.title("Rendimiento de Bots")
+        # Solo lo que no sea el depósito
+        df_solo_bots = df[df['magic'] != 0].copy()
+        listado = sorted([f"BOT {int(m)}" for m in df_solo_bots['magic'].unique()])
+        
+        opcion = st.selectbox("Seleccionar Bot:", ["🔍 VER TODOS"] + listado)
         
         fig_bots = go.Figure()
         if opcion == "🔍 VER TODOS":
-            for b in listado:
-                b_df = df[df['bot_label'] == b]
-                fig_bots.add_trace(go.Scatter(x=b_df['closetime'], y=b_df['bot_profit_cum'], name=b))
-            st.info(f"Beneficio Total Combinado: {beneficio_bots:,.2f} €")
+            for m in df_solo_bots['magic'].unique():
+                b_df = df_solo_bots[df_solo_bots['magic'] == m].copy()
+                b_df['profit_acum'] = b_df['net_profit'].cumsum()
+                fig_bots.add_trace(go.Scatter(x=b_df['closetime'], y=b_df['profit_acum'], name=f"BOT {int(m)}", mode='lines'))
         else:
-            b_df = df[df['bot_label'] == opcion]
-            fig_bots.add_trace(go.Scatter(x=b_df['closetime'], y=b_df['bot_profit_cum'], name=opcion, fill='tozeroy'))
-            st.info(f"Rendimiento {opcion}: {b_df['net_profit'].sum():,.2f} €")
+            magic_id = int(opcion.replace("BOT ", ""))
+            b_df = df_solo_bots[df_solo_bots['magic'] == magic_id].copy()
+            b_df['profit_acum'] = b_df['net_profit'].cumsum()
+            fig_bots.add_trace(go.Scatter(x=b_df['closetime'], y=b_df['profit_acum'], name=opcion, mode='lines', line=dict(color='#00FFC8')))
         
-        fig_bots.update_layout(template="plotly_dark")
+        fig_bots.update_layout(template="plotly_dark", paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)')
         st.plotly_chart(fig_bots, use_container_width=True)
 
     elif menu == "📜 HISTORIAL":
-        st.title("Registro")
-        st.dataframe(df[['closetime', 'bot_label', 'symbol', 'net_profit']].sort_values('closetime', ascending=False), use_container_width=True)
+        st.title("Historial")
+        df['label'] = df['magic'].apply(lambda x: "DEPOSITO" if x == 0 else f"BOT {int(x)}")
+        st.dataframe(df[['closetime', 'label', 'symbol', 'net_profit', 'comment']].sort_values('closetime', ascending=False), use_container_width=True)
