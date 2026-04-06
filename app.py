@@ -39,12 +39,11 @@ else:
     # --- 3. CONTABILIDAD ---
     deposito_inicial = 100000.0
     balance_total = df['net_profit'].sum()
-    profit_bots_final = balance_total - deposito_inicial # Nombre de variable único
+    profit_bots_final = balance_total - deposito_inicial
     
-    # Fecha de inicio de la cuenta
     fecha_inicio_cuenta = df['closetime'].min()
+    fecha_actual_datos = df['closetime'].max() # El momento del último trade de la cuenta
     
-    # Filtro de bots (Excluimos el depósito)
     df_solo_bots = df[df['profit'] < 50000].copy()
 
     # --- 4. NAVEGACIÓN ---
@@ -70,18 +69,23 @@ else:
         bot_ids = [m for m in sorted(df_solo_bots['magic'].unique()) if m > 0]
         opcion = st.selectbox("Vista:", ["📊 COMPARATIVA GLOBAL"] + [f"BOT {int(m)}" for m in bot_ids])
         
-        fig_bots = go.Figure()
-
         def get_bot_series(m_id):
             b_df = df_solo_bots[df_solo_bots['magic'] == m_id].copy()
             b_df = b_df.sort_values('closetime')
             b_df['cum'] = b_df['net_profit'].cumsum()
             
-            # Sincronización temporal: empezamos en 0 el día del depósito
+            # Punto A: Inicio (0 €)
             inicio_row = pd.DataFrame({'closetime': [fecha_inicio_cuenta], 'cum': [0.0]})
-            b_series = pd.concat([inicio_row, b_df[['closetime', 'cum']]]).sort_values('closetime')
+            
+            # Punto B: El presente (Mantiene el último valor acumulado)
+            ultimo_valor = b_df['cum'].iloc[-1] if not b_df.empty else 0.0
+            final_row = pd.DataFrame({'closetime': [fecha_actual_datos], 'cum': [ultimo_valor]})
+            
+            # Unimos todo: Inicio -> Trades Reales -> Presente
+            b_series = pd.concat([inicio_row, b_df[['closetime', 'cum']], final_row]).sort_values('closetime')
             return b_series
 
+        fig_bots = go.Figure()
         if opcion == "📊 COMPARATIVA GLOBAL":
             st.subheader(f"Beneficio Acumulado: {profit_bots_final:,.2f} €")
             for m in bot_ids:
@@ -93,7 +97,7 @@ else:
             st.metric(f"Profit {opcion}", f"{serie['cum'].iloc[-1]:,.2f} €")
             fig_bots.add_trace(go.Scatter(x=serie['closetime'], y=serie['cum'], name=opcion, mode='lines', line=dict(color='#00FFC8')))
 
-        fig_bots.update_layout(template="plotly_dark", height=600)
+        fig_bots.update_layout(template="plotly_dark", height=600, xaxis_title="Línea de tiempo unificada")
         st.plotly_chart(fig_bots, use_container_width=True)
 
     elif menu == "📜 HISTORIAL":
